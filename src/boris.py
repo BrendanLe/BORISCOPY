@@ -20,7 +20,7 @@ This file is part of BORIS.
 
 """
 
-
+import threading
 import datetime
 import glob
 import hashlib
@@ -693,6 +693,38 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.init_percent_memory = utilities.rss_memory_percent_used(self.pid)
         '''
 
+        self.scrollTimer = None
+        self.scrollChange = .2
+        self.scrollAngle = 120 #positive for up, negative for down
+
+    def wheelEvent(self, event):
+        angle = event.angleDelta().y()
+
+        if self.scrollTimer is not None:
+            self.scrollTimer.cancel()
+
+        self.scrollTimer = threading.Timer(1, self.resetScrollSpeed, [])
+        self.scrollTimer.start()
+
+        if ((angle > 0 and self.scrollAngle < 0) or (angle < 0 and self.scrollAngle > 0)):
+            self.scrollAngle = angle
+            self.resetScrollSpeed()
+
+        if (angle >= 120):
+            self.jumpForward_activated(self.scrollChange)
+        else:
+            self.jumpBackward_activated(self.scrollChange)
+
+        if (self.scrollChange >= 6):
+            self.scrollChange *= 1.1 
+        elif (self.scrollChange >= 4):
+            self.scrollChange *= 1.01
+        else:
+            self.scrollChange = (self.scrollChange * 2) + .2
+
+    def resetScrollSpeed(self):
+        self.scrollChange = .2
+        
 
     def menu_options(self):
         """
@@ -3173,9 +3205,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                         pass
 
             else:
-                QMessageBox.warning(self, programName,
-                                    ("The indicated position is behind the end of media "
-                                     f"({seconds2time(self.dw_player[player].mediaplayer.get_length() / 1000)})"))
+                try:
+                    self.dw_player[player].mediaplayer.set_time(self.dw_player[player].mediaplayer.get_length())
+                    self.video_slider.setValue(self.dw_player[player].mediaplayer.get_length())
+                except Exception:
+                    pass
 
         elif self.dw_player[player].media_list.count() > 1:
 
@@ -11639,13 +11673,15 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 self.pause_video()
 
 
-    def jumpBackward_activated(self):
+    def jumpBackward_activated(self, decrement = None):
         """
         rewind from current position
         """
         if self.playerType == VLC:
 
-            decrement = self.fast * self.play_rate if self.config_param.get(ADAPT_FAST_JUMP, ADAPT_FAST_JUMP_DEFAULT) else self.fast
+            if (decrement is False): 
+                decrement = self.fast * self.play_rate if self.config_param.get(ADAPT_FAST_JUMP, ADAPT_FAST_JUMP_DEFAULT) else self.fast
+
             if self.playMode == FFMPEG:
                 currentTime = self.FFmpegGlobalFrame / self.fps
 
@@ -11676,15 +11712,16 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     player.mediaplayer.video_set_spu(st_track_number)
 
 
-    def jumpForward_activated(self):
+    def jumpForward_activated(self, increment = None):
         """
         forward from current position
         """
         logging.debug("function: jumpForward_activated")
 
         if self.playerType == VLC:
+            if (increment is False):
+                increment = self.fast * self.play_rate if self.config_param.get(ADAPT_FAST_JUMP, ADAPT_FAST_JUMP_DEFAULT) else self.fast 
 
-            increment = self.fast * self.play_rate if self.config_param.get(ADAPT_FAST_JUMP, ADAPT_FAST_JUMP_DEFAULT) else self.fast
             if self.playMode == FFMPEG:
 
                 self.FFmpegGlobalFrame += increment * self.fps
